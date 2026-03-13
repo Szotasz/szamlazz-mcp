@@ -2,9 +2,30 @@ startCommand:
   type: stdio
   configSchema:
     type: object
-    properties: {}
+    properties:
+      apiKey:
+        type: string
+        description: "Számlázz.hu Agent API kulcs (kötelező az első céghez)"
+      companyName:
+        type: string
+        description: "Cég neve (pl. 'Példa Kft.')"
+      companyId:
+        type: string
+        description: "Cég azonosító (pl. 'pelda-kft') - opcionális, automatikusan generálódik a névből"
+    required:
+      - apiKey
+      - companyName
+  exampleConfig:
+    apiKey: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    companyName: "Példa Kft."
+    companyId: "pelda-kft"
   commandFunction: |
     (config) => ({
       command: 'node',
-      args: ['dist/index.js']
+      args: ['dist/index.js'],
+      env: {
+        SZAMLAZZ_API_KEY: config.apiKey,
+        SZAMLAZZ_COMPANY_NAME: config.companyName,
+        SZAMLAZZ_COMPANY_ID: config.companyId || ''
+      }
     })

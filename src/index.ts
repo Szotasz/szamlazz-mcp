@@ -28,6 +28,37 @@ import {
 } from "./tools/receipt.js";
 
 import { sanitizeError } from "./api.js";
+import { loadConfig, saveConfig } from "./config.js";
+
+// Auto-setup first company from environment variables (Smithery install)
+function autoSetupFromEnv(): void {
+  const apiKey = process.env.SZAMLAZZ_API_KEY;
+  const companyName = process.env.SZAMLAZZ_COMPANY_NAME;
+
+  if (!apiKey || !companyName) return;
+
+  const config = loadConfig();
+
+  // Only auto-setup if no companies are configured yet
+  if (Object.keys(config.companies).length > 0) return;
+
+  const companyId = process.env.SZAMLAZZ_COMPANY_ID
+    || companyName
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // remove accents
+        .replace(/[^a-z0-9]+/g, "-")                        // non-alphanum → dash
+        .replace(/^-|-$/g, "");                              // trim dashes
+
+  if (!companyId) return;
+
+  config.companies[companyId] = { name: companyName, apiKey };
+  config.defaultCompany = companyId;
+  saveConfig(config);
+
+  console.error(`Auto-setup: "${companyName}" hozzáadva "${companyId}" azonosítóval.`);
+}
+
+autoSetupFromEnv();
 
 const server = new McpServer({
   name: "szamlazz-hu",
