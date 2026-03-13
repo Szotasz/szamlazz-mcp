@@ -28,7 +28,15 @@ import {
 } from "./tools/receipt.js";
 
 import { sanitizeError } from "./api.js";
-import { loadConfig, saveConfig } from "./config.js";
+import { loadConfig, saveConfig, initHostedConfig, isHosted } from "./config.js";
+
+function generateCompanyId(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "ceg";
+}
 
 // Auto-setup first company from environment variables (Smithery install)
 function autoSetupFromEnv(): void {
@@ -37,19 +45,18 @@ function autoSetupFromEnv(): void {
 
   if (!apiKey || !companyName) return;
 
+  const companyId = process.env.SZAMLAZZ_COMPANY_ID || generateCompanyId(companyName);
+
+  if (isHosted) {
+    // Hosted: always init from env (no filesystem)
+    initHostedConfig(companyId, companyName, apiKey);
+    console.error(`Hosted auto-setup: "${companyName}" (${companyId})`);
+    return;
+  }
+
+  // Local: only setup if no companies configured yet
   const config = loadConfig();
-
-  // Only auto-setup if no companies are configured yet
   if (Object.keys(config.companies).length > 0) return;
-
-  const companyId = process.env.SZAMLAZZ_COMPANY_ID
-    || companyName
-        .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // remove accents
-        .replace(/[^a-z0-9]+/g, "-")                        // non-alphanum → dash
-        .replace(/^-|-$/g, "");                              // trim dashes
-
-  if (!companyId) return;
 
   config.companies[companyId] = { name: companyName, apiKey };
   config.defaultCompany = companyId;

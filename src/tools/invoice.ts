@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { loadConfig, getCompanyApiKey, getSafePdfOutputDir, sanitizeFilename, writePdfSafely } from "../config.js";
+import { loadConfig, getCompanyApiKey, handlePdf, sanitizeFilename } from "../config.js";
 import { sendAgentRequest, extractPdfFromXml, extractMetadata, isSuccessResponse, sanitizeResponseXml } from "../api.js";
 import {
   buildCreateInvoiceXml,
@@ -129,12 +129,11 @@ export async function createInvoice(params: z.infer<typeof createInvoiceSchema>)
   const meta = extractMetadata(response);
   const success = isSuccessResponse(response);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (success && response.parsedXml) {
     const pdfBuffer = extractPdfFromXml(response.parsedXml);
     if (pdfBuffer && meta.szamlaszam) {
-      const outputDir = getSafePdfOutputDir(config, company.name);
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(meta.szamlaszam), pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(meta.szamlaszam), pdfBuffer);
     }
   }
 
@@ -143,7 +142,7 @@ export async function createInvoice(params: z.infer<typeof createInvoiceSchema>)
     szamlaszam: meta.szamlaszam,
     netto: meta.netto,
     brutto: meta.brutto,
-    pdfPath,
+    ...pdf,
     vevoifiokurl: meta.vevoifiokurl,
   });
 }
@@ -180,12 +179,11 @@ export async function reverseInvoice(params: z.infer<typeof reverseInvoiceSchema
   const meta = extractMetadata(response);
   const success = isSuccessResponse(response);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (success && response.parsedXml) {
     const pdfBuffer = extractPdfFromXml(response.parsedXml);
     if (pdfBuffer && meta.szamlaszam) {
-      const outputDir = getSafePdfOutputDir(config, company.name);
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(meta.szamlaszam), pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(meta.szamlaszam), pdfBuffer);
     }
   }
 
@@ -194,7 +192,7 @@ export async function reverseInvoice(params: z.infer<typeof reverseInvoiceSchema
     sztornoSzamlaszam: meta.szamlaszam,
     netto: meta.netto,
     brutto: meta.brutto,
-    pdfPath,
+    ...pdf,
   });
 }
 
@@ -221,7 +219,7 @@ export async function getInvoicePdf(params: z.infer<typeof getInvoicePdfSchema>)
   const meta = extractMetadata(response);
   const success = isSuccessResponse(response);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (success) {
     let pdfBuffer: Buffer | null = null;
 
@@ -232,8 +230,7 @@ export async function getInvoicePdf(params: z.infer<typeof getInvoicePdfSchema>)
     }
 
     if (pdfBuffer) {
-      const outputDir = getSafePdfOutputDir(config, company.name);
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(params.szamlaszam), pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(params.szamlaszam), pdfBuffer);
     }
   }
 
@@ -242,8 +239,8 @@ export async function getInvoicePdf(params: z.infer<typeof getInvoicePdfSchema>)
     szamlaszam: meta.szamlaszam || params.szamlaszam,
     netto: meta.netto,
     brutto: meta.brutto,
-    pdfPath,
-    message: pdfPath ? `PDF mentve: ${pdfPath}` : "PDF mentés sikertelen",
+    ...pdf,
+    message: pdf.pdfPath ? `PDF mentve: ${pdf.pdfPath}` : pdf.pdfBase64 ? "PDF base64 kódolva visszaadva" : "PDF mentés sikertelen",
   });
 }
 
@@ -275,23 +272,21 @@ export async function getInvoiceData(params: z.infer<typeof getInvoiceDataSchema
 
   const response = await sendAgentRequest("action-szamla_agent_xml", xml);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (params.pdf && response.parsedXml) {
     const pdfBuffer = extractPdfFromXml(response.parsedXml);
     if (pdfBuffer) {
-      const outputDir = getSafePdfOutputDir(config, company.name);
       const id = params.szamlaszam || params.rendelesSzam || "invoice";
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(id), pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(id), pdfBuffer);
     }
   }
 
-  // Sanitize response XML (remove sensitive/large fields)
   const cleanedXml = response.parsedXml ? sanitizeResponseXml(response.parsedXml) : {};
 
   return JSON.stringify({
     success: true,
     data: cleanedXml,
-    pdfPath,
+    ...pdf,
   });
 }
 

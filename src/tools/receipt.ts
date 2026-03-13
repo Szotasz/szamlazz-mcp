@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { loadConfig, getCompanyApiKey, getSafePdfOutputDir, sanitizeFilename, writePdfSafely } from "../config.js";
+import { loadConfig, getCompanyApiKey, handlePdf, sanitizeFilename } from "../config.js";
 import { sendAgentRequest, extractPdfFromXml, isSuccessResponse, extractField, sanitizeResponseXml } from "../api.js";
 import {
   buildCreateReceiptXml,
@@ -74,7 +74,7 @@ export async function createReceipt(params: z.infer<typeof createReceiptSchema>)
   const success = isSuccessResponse(response);
 
   let nyugtaszam: string | undefined;
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
 
   if (response.parsedXml) {
     const nySzam = extractField(response.parsedXml, "nyugtaszam");
@@ -83,8 +83,7 @@ export async function createReceipt(params: z.infer<typeof createReceiptSchema>)
     if (params.pdfLetoltes) {
       const pdfBuffer = extractPdfFromXml(response.parsedXml);
       if (pdfBuffer && nyugtaszam) {
-        const outputDir = getSafePdfOutputDir(config, company.name, "nyugtak");
-        pdfPath = writePdfSafely(outputDir, sanitizeFilename(nyugtaszam), pdfBuffer);
+        pdf = handlePdf(config, company.name, sanitizeFilename(nyugtaszam), pdfBuffer, "nyugtak");
       }
     }
   }
@@ -92,7 +91,7 @@ export async function createReceipt(params: z.infer<typeof createReceiptSchema>)
   return JSON.stringify({
     success,
     nyugtaszam,
-    pdfPath,
+    ...pdf,
   });
 }
 
@@ -119,19 +118,18 @@ export async function reverseReceipt(params: z.infer<typeof reverseReceiptSchema
   const response = await sendAgentRequest("action-szamla_agent_nyugta_storno", xml);
   const success = isSuccessResponse(response);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (params.pdfLetoltes && response.parsedXml) {
     const pdfBuffer = extractPdfFromXml(response.parsedXml);
     if (pdfBuffer) {
-      const outputDir = getSafePdfOutputDir(config, company.name, "nyugtak");
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(params.nyugtaszam) + "-sztorno", pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(params.nyugtaszam) + "-sztorno", pdfBuffer, "nyugtak");
     }
   }
 
   return JSON.stringify({
     success,
     message: success ? "Nyugta sikeresen sztornózva." : "Nyugta sztornó sikertelen.",
-    pdfPath,
+    ...pdf,
   });
 }
 
@@ -158,22 +156,20 @@ export async function getReceipt(params: z.infer<typeof getReceiptSchema>): Prom
   const response = await sendAgentRequest("action-szamla_agent_nyugta_get", xml);
   const success = isSuccessResponse(response);
 
-  let pdfPath: string | undefined;
+  let pdf: { pdfPath?: string; pdfBase64?: string } = {};
   if (response.parsedXml) {
     const pdfBuffer = extractPdfFromXml(response.parsedXml);
     if (pdfBuffer) {
-      const outputDir = getSafePdfOutputDir(config, company.name, "nyugtak");
-      pdfPath = writePdfSafely(outputDir, sanitizeFilename(params.nyugtaszam), pdfBuffer);
+      pdf = handlePdf(config, company.name, sanitizeFilename(params.nyugtaszam), pdfBuffer, "nyugtak");
     }
   }
 
-  // Sanitize response XML (remove sensitive/large fields)
   const cleanedXml = response.parsedXml ? sanitizeResponseXml(response.parsedXml) : {};
 
   return JSON.stringify({
     success,
     data: cleanedXml,
-    pdfPath,
+    ...pdf,
   });
 }
 
